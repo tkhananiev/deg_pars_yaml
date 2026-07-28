@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitLab YAML → XLSX</title>
+<style>
+  :root {
+    --accent: #fc6d26;
+    --accent-dark: #e24329;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --border: #d1d5db;
+    --error-bg: #fef2f2;
+    --error-border: #fca5a5;
+    --error-text: #b91c1c;
+    --ok-bg: #f0fdf4;
+    --ok-border: #86efac;
+    --ok-text: #15803d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--text);
+    background: linear-gradient(160deg, #eef2ff 0%, #fdf2f8 55%, #fff7ed 100%);
+  }
+  .card {
+    width: 100%;
+    max-width: 640px;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 20px 50px rgba(31, 41, 55, 0.12);
+    padding: 36px 40px;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .logo-badge {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+  }
+  h1 { font-size: 22px; margin: 0; }
+  .subtitle { color: var(--muted); font-size: 14px; margin: 6px 0 26px; line-height: 1.5; }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .field { margin-bottom: 18px; }
+  .input-wrap { position: relative; }
+  input[type="url"], input[type="password"], input[type="text"] {
+    width: 100%;
+    padding: 11px 12px;
+    font-size: 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    font-family: inherit;
+  }
+  input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(252, 109, 38, 0.15);
+  }
+  .toggle-visibility {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 12px;
+    padding: 4px 6px;
+  }
+  .toggle-visibility:hover { color: var(--text); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text);
+    margin-bottom: 22px;
+    user-select: none;
+  }
+  .checkbox-row input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .checkbox-row label { margin: 0; font-weight: 400; cursor: pointer; }
+  button.submit {
+    width: 100%;
+    padding: 13px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: opacity 0.15s, transform 0.05s;
+    font-family: inherit;
+  }
+  button.submit:hover:not(:disabled) { opacity: 0.92; }
+  button.submit:active:not(:disabled) { transform: scale(0.995); }
+  button.submit:disabled { opacity: 0.6; cursor: not-allowed; }
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+  .busy .spinner { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .status {
+    display: none;
+    margin-top: 18px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    border: 1px solid;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .status.error { display: block; background: var(--error-bg); border-color: var(--error-border); color: var(--error-text); }
+  .status.ok { display: block; background: var(--ok-bg); border-color: var(--ok-border); color: var(--ok-text); }
+  details { margin-top: 22px; font-size: 12.5px; color: var(--muted); }
+  details summary { cursor: pointer; font-weight: 600; }
+  details code {
+    display: block;
+    background: #f3f4f6;
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin-top: 6px;
+    font-size: 11.5px;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="logo">
+      <div class="logo-badge">Y→X</div>
+      <h1>GitLab YAML → XLSX</h1>
+    </div>
+    <p class="subtitle">
+      Укажите ссылку на YAML-файл в GitLab и токен доступа — приложение скачает файл
+      через API GitLab, разберёт его с сохранением всех уровней вложенности и вернёт таблицу Excel.
+    </p>
+
+    <form id="convert-form">
+      <div class="field">
+        <label for="url">URL файла в GitLab</label>
+        <input type="url" id="url" required
+               placeholder="https://gitlab.example.com/group/project/-/blob/main/skdpu_http_upstreams.yml">
+      </div>
+
+      <div class="field">
+        <label for="token">Токен доступа (PRIVATE-TOKEN)</label>
+        <div class="input-wrap">
+          <input type="password" id="token" placeholder="glpat-…" autocomplete="off">
+          <button type="button" class="toggle-visibility" id="toggle-token" aria-label="Показать токен">Показать</button>
+        </div>
+        <div class="hint">Персональный токен со scope <b>read_api</b> (или <b>api</b>). Для публичных проектов можно оставить пустым.</div>
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="skip-ssl">
+        <label for="skip-ssl">Не проверять SSL-сертификат (самоподписанные сертификаты)</label>
+      </div>
+
+      <button type="submit" class="submit" id="submit-btn">
+        <span class="spinner"></span>
+        <span id="submit-label">Скачать XLSX</span>
+      </button>
+    </form>
+
+    <div class="status" id="status"></div>
+
+    <details>
+      <summary>Поддерживаемые форматы ссылок</summary>
+      <code>https://gitlab.example.com/group/project/-/blob/main/path/file.yml</code>
+      <code>https://gitlab.example.com/group/project/-/raw/main/path/file.yml</code>
+      <code>https://gitlab.example.com/api/v4/projects/123/repository/files/path%2Ffile.yml/raw?ref=main</code>
+    </details>
+  </main>
+
+<script>
+  const form = document.getElementById("convert-form");
+  const urlInput = document.getElementById("url");
+  const tokenInput = document.getElementById("token");
+  const skipSslInput = document.getElementById("skip-ssl");
+  const submitBtn = document.getElementById("submit-btn");
+  const submitLabel = document.getElementById("submit-label");
+  const statusBox = document.getElementById("status");
+  const toggleToken = document.getElementById("toggle-token");
+
+  toggleToken.addEventListener("click", () => {
+    const hidden = tokenInput.type === "password";
+    tokenInput.type = hidden ? "text" : "password";
+    toggleToken.textContent = hidden ? "Скрыть" : "Показать";
+  });
+
+  function setStatus(kind, message) {
+    statusBox.className = "status" + (kind ? " " + kind : "");
+    statusBox.textContent = message || "";
+  }
+
+  function setBusy(busy) {
+    submitBtn.disabled = busy;
+    submitBtn.classList.toggle("busy", busy);
+    submitLabel.textContent = busy ? "Загрузка и конвертация…" : "Скачать XLSX";
+  }
+
+  function fileNameFrom(response) {
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match) {
+      try { return decodeURIComponent(utf8Match[1]); } catch (e) { /* игнорируем */ }
+    }
+    const plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+    return plainMatch ? plainMatch[1] : "converted.xlsx";
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    setStatus("", "");
+    setBusy(true);
+    try {
+      const response = await fetch("/api/convert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: urlInput.value.trim(),
+          token: tokenInput.value.trim(),
+          verify_ssl: !skipSslInput.checked,
+        }),
+      });
+
+      if (!response.ok) {
+        let detail = "Ошибка " + response.status;
+        try {
+          const payload = await response.json();
+          if (payload && payload.detail) detail = payload.detail;
+        } catch (e) { /* тело не JSON */ }
+        setStatus("error", detail);
+        return;
+      }
+
+      const blob = await response.blob();
+      const fileName = fileNameFrom(response);
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+
+      const rowCount = response.headers.get("X-Row-Count");
+      setStatus("ok", "Готово: " + fileName + (rowCount ? " (строк данных: " + rowCount + ")" : ""));
+    } catch (e) {
+      setStatus("error", "Не удалось выполнить запрос: " + e.message);
+    } finally {
+      setBusy(false);
+    }
+  });
+</script>
+</body>
+</html>
