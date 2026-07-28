@@ -52,6 +52,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9999
     file_path = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_FILE
+    if not file_path.is_file():
+        sys.exit(
+            f"mock-gitlab: файл {file_path} не найден. "
+            "Укажите путь к YAML-файлу вторым аргументом: "
+            "python3 tests/mock_gitlab.py 9999 /путь/к/файлу.yml"
+        )
     Handler.yaml_bytes = file_path.read_bytes()
     server = http.server.HTTPServer(("0.0.0.0", port), Handler)
     print(f"mock-gitlab: слушаю на :{port}, отдаю {file_path} (токен: {TOKEN})")

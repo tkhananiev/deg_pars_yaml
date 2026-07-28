@@ -39,7 +39,7 @@ def convert(request: ConvertRequest) -> Response:
     logger.info("Запрос конвертации: %s (verify_ssl=%s)", url, request.verify_ssl)
     try:
         fetched = fetch_file(url, request.token.strip(), verify_ssl=request.verify_ssl)
-        xlsx_bytes, row_count = convert_yaml_to_xlsx(
+        xlsx_bytes, row_count, root_key = convert_yaml_to_xlsx(
             fetched.content, source_url=url, file_name=fetched.file_name
         )
     except GitLabFetchError as exc:
@@ -53,13 +53,13 @@ def convert(request: ConvertRequest) -> Response:
     download_name = f"{base_name}.xlsx"
     logger.info("Готово: %s, строк данных: %d", download_name, row_count)
 
-    return Response(
-        content=xlsx_bytes,
-        media_type=_XLSX_MEDIA_TYPE,
-        headers={
-            "Content-Disposition": (
-                f"attachment; filename=\"converted.xlsx\"; filename*=UTF-8''{quote(download_name)}"
-            ),
-            "X-Row-Count": str(row_count),
-        },
-    )
+    headers = {
+        "Content-Disposition": (
+            f"attachment; filename=\"converted.xlsx\"; filename*=UTF-8''{quote(download_name)}"
+        ),
+        "X-Row-Count": str(row_count),
+    }
+    if root_key:
+        headers["X-Root-Key"] = quote(root_key)  # URL-кодирование: в HTTP-заголовках только ASCII
+
+    return Response(content=xlsx_bytes, media_type=_XLSX_MEDIA_TYPE, headers=headers)

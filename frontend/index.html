@@ -146,6 +146,7 @@
   }
   .status.error { display: block; background: var(--error-bg); border-color: var(--error-border); color: var(--error-text); }
   .status.ok { display: block; background: var(--ok-bg); border-color: var(--ok-border); color: var(--ok-text); }
+  .status-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
   details { margin-top: 22px; font-size: 12.5px; color: var(--muted); }
   details summary { cursor: pointer; font-weight: 600; }
   details code {
@@ -224,9 +225,16 @@
     toggleToken.textContent = hidden ? "Скрыть" : "Показать";
   });
 
-  function setStatus(kind, message) {
+  function setStatus(kind, message, title) {
     statusBox.className = "status" + (kind ? " " + kind : "");
-    statusBox.textContent = message || "";
+    statusBox.textContent = "";
+    if (title) {
+      const heading = document.createElement("div");
+      heading.className = "status-title";
+      heading.textContent = title;
+      statusBox.appendChild(heading);
+    }
+    statusBox.appendChild(document.createTextNode(message || ""));
   }
 
   function setBusy(busy) {
@@ -281,7 +289,12 @@
       URL.revokeObjectURL(link.href);
 
       const rowCount = response.headers.get("X-Row-Count");
-      setStatus("ok", "Готово: " + fileName + (rowCount ? " (строк данных: " + rowCount + ")" : ""));
+      const rootKeyRaw = response.headers.get("X-Root-Key");
+      let rootKey = "";
+      if (rootKeyRaw) {
+        try { rootKey = decodeURIComponent(rootKeyRaw); } catch (e) { rootKey = rootKeyRaw; }
+      }
+      setStatus("ok", "Готово: " + fileName + (rowCount ? " (записей: " + rowCount + ")" : ""), rootKey);
     } catch (e) {
       setStatus("error", "Не удалось выполнить запрос: " + e.message);
     } finally {
