@@ -23,7 +23,7 @@
 docker compose up --build
 ```
 
-Интерфейс: <http://localhost:8080> (порт меняется в `docker-compose.yml`).
+Интерфейс: <http://localhost:9000> (порт меняется в `docker-compose.yml`).
 
 ## Использование
 
@@ -47,7 +47,7 @@ backend/            FastAPI: загрузка из GitLab + конвертаци
   app/converter.py       YAML → XLSX (openpyxl)
   app/main.py            HTTP API (POST /api/convert)
 frontend/           статическая страница + nginx (проксирует /api на бэкенд)
-docker-compose.yml  два сервиса: backend и frontend (порт 8080)
+docker-compose.yml  два сервиса: backend и frontend (порт 9000)
 tests/mock_gitlab.py     мок GitLab API для локальной проверки
 ```
 
