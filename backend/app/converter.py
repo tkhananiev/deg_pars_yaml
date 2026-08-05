@@ -7,6 +7,9 @@
 имя записи в первой колонке, скалярные поля и списки — по своим колонкам,
 вложенные словари (main, backup, …) — группами колонок с двухуровневой шапкой.
 Списки растягиваются вниз внутри блока, блоки разделяются пустой строкой.
+Скалярные поля (и одноэлементные списки) и имя записи повторяются на каждой
+строке блока — иначе AutoFilter Excel при фильтре по domains/environment/…
+скрывает строки main/backup с пустыми ячейками.
 
 Универсальная таблица — для любых других структур: каждое конечное значение
 становится строкой, колонки «Уровень 1..N» показывают путь до значения
@@ -178,10 +181,53 @@ def _as_stack(value) -> list:
     return [value]
 
 
+def _strip_server_params(value):
+    """Оставляет host:port, отбрасывая параметры nginx (max_fails=… и т.п.)."""
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return value
+    return text.split(None, 1)[0]
+
+
+def _as_server_stack(value) -> list:
+    return [_strip_server_params(item) for item in _as_stack(value)]
+
+
+def _pad_stack_for_filter(stack: list, height: int) -> list:
+    """Повторяет единственное значение на всю высоту блока для AutoFilter.
+
+    Многоэлементные списки (несколько domains, servers, …) по-прежнему
+    растягиваются по строкам без повторения.
+    """
+    if len(stack) == 1 and height > 1:
+        return stack * height
+    return stack
+
+
+def _priority_and_zone(name: str) -> tuple[str | None, str | None]:
+    """Из имени записи: priority — до первого «-», network_zone — следующее слово.
+
+    Пример: ``first-external_cdn_deg_mos_ru`` → (``first``, ``external``).
+    Слово после «-» режется по ближайшему ``-`` или ``_``.
+    Если в имени нет «-», оба значения пустые.
+    """
+    if "-" not in name:
+        return None, None
+    priority, rest = name.split("-", 1)
+    zone = re.split(r"[-_]", rest, maxsplit=1)[0]
+    return (priority or None), (zone or None)
+
+
 def _fill_record_sheet(sheet, records: dict, fields: list) -> int:
-    # Физическая раскладка колонок: имя записи (без заголовка), поля-значения,
-    # перед каждой группой — узкая колонка-разделитель с её названием.
-    layout = [{"type": "name", "header": ""}]
+    # Физическая раскладка колонок: имя записи (без заголовка), priority,
+    # network_zone, поля-значения; перед каждой группой — узкая колонка-разделитель.
+    layout = [
+        {"type": "name", "header": ""},
+        {"type": "derived", "header": "priority", "part": "priority"},
+        {"type": "derived", "header": "network_zone", "part": "network_zone"},
+    ]
     for field in fields:
         if field["kind"] == "value":
             layout.append({"type": "value", "key": field["key"], "header": field["key"]})
@@ -204,7 +250,7 @@ def _fill_record_sheet(sheet, records: dict, fields: list) -> int:
             cell.alignment = _HEADER_ALIGNMENT
             cell.border = _THIN_BORDER
     for column, spec in enumerate(layout, start=1):
-        if spec["type"] in ("name", "value"):
+        if spec["type"] in ("name", "value", "derived"):
             sheet.cell(row=1, column=column, value=spec["header"])
             sheet.merge_cells(
                 start_row=1, start_column=column, end_row=2, end_column=column
@@ -225,21 +271,29 @@ def _fill_record_sheet(sheet, records: dict, fields: list) -> int:
 
     row_cursor = 3
     for name, record in records.items():
+        priority, zone = _priority_and_zone(str(name))
         stacks = []
         for spec in layout:
-            if spec["type"] == "value":
+            if spec["type"] == "name":
+                stacks.append([str(name)])
+            elif spec["type"] == "derived":
+                value = priority if spec["part"] == "priority" else zone
+                stacks.append([value] if value is not None else [])
+            elif spec["type"] == "value":
                 stacks.append(_as_stack(record.get(spec["key"], _MISSING)))
             elif spec["type"] == "sub":
                 group = record.get(spec["key"])
-                sub_value = group.get(spec["sub"], _MISSING) if isinstance(group, dict) else _MISSING
-                stacks.append(_as_stack(sub_value))
+                sub_value = (
+                    group.get(spec["sub"], _MISSING) if isinstance(group, dict) else _MISSING
+                )
+                if spec["sub"] == "servers":
+                    stacks.append(_as_server_stack(sub_value))
+                else:
+                    stacks.append(_as_stack(sub_value))
             else:
                 stacks.append([])
         block_height = max([1] + [len(stack) for stack in stacks])
-
-        name_cell = sheet.cell(row=row_cursor, column=1, value=str(name))
-        name_cell.font = _NAME_FONT
-        column_widths[0] = max(column_widths[0], len(str(name)))
+        stacks = [_pad_stack_for_filter(stack, block_height) for stack in stacks]
 
         for column, (spec, stack) in enumerate(zip(layout, stacks), start=1):
             if spec["type"] == "spacer":
@@ -249,6 +303,8 @@ def _fill_record_sheet(sheet, records: dict, fields: list) -> int:
                 cell.border = _THIN_BORDER
                 if offset < len(stack):
                     _write_value_cell(cell, stack[offset])
+                    if spec["type"] == "name":
+                        cell.font = _NAME_FONT
                     column_widths[column - 1] = max(
                         column_widths[column - 1], len(str(cell.value or ""))
                     )
@@ -266,6 +322,9 @@ def _fill_record_sheet(sheet, records: dict, fields: list) -> int:
         sheet.column_dimensions[get_column_letter(column)].width = width
 
     sheet.freeze_panes = "A3"
+    # Последняя строка данных без завершающего разделителя (он пустой и не пишется).
+    last_data_row = max(row_cursor - 2, 2)
+    sheet.auto_filter.ref = f"A1:{get_column_letter(total_columns)}{last_data_row}"
     return len(records)
 
 
